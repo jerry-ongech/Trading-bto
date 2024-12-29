@@ -1,0 +1,207 @@
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Xml.Serialization;
+using NinjaTrader.Cbi;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.SuperDom;
+using NinjaTrader.Gui.Tools;
+using NinjaTrader.Data;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.Core.FloatingPoint;
+using NinjaTrader.NinjaScript.Indicators;
+using NinjaTrader.NinjaScript.DrawingTools;
+#endregion
+
+//This namespace holds Strategies in this folder and is required. Do not change it. 
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public class indcode : Strategy
+	{
+		private double BEprice;
+		private double Tstop;
+
+		private EMA EMA1;
+		private EMA EMA2;
+		private CandlestickPattern CandlestickPattern1;
+		private RSI RSI1;
+		private ParabolicSAR ParabolicSAR1;
+		private CandlestickPattern CandlestickPattern2;
+
+		protected override void OnStateChange()
+		{
+			if (State == State.SetDefaults)
+			{
+				Description									= @"Enter the description for your new custom Strategy here.";
+				Name										= "indcode";
+				Calculate									= Calculate.OnPriceChange;
+				EntriesPerDirection							= 1;
+				EntryHandling								= EntryHandling.AllEntries;
+				IsExitOnSessionCloseStrategy				= true;
+				ExitOnSessionCloseSeconds					= 30;
+				IsFillLimitOnTouch							= false;
+				MaximumBarsLookBack							= MaximumBarsLookBack.TwoHundredFiftySix;
+				OrderFillResolution							= OrderFillResolution.Standard;
+				Slippage									= 0;
+				StartBehavior								= StartBehavior.WaitUntilFlat;
+				TimeInForce									= TimeInForce.Gtc;
+				TraceOrders									= false;
+				RealtimeErrorHandling						= RealtimeErrorHandling.StopCancelClose;
+				StopTargetHandling							= StopTargetHandling.PerEntryExecution;
+				BarsRequiredToTrade							= 20;
+				// Disable this property for performance gains in Strategy Analyzer optimizations
+				// See the Help Guide for additional information
+				IsInstantiatedOnEachOptimizationIteration	= true;
+				EM1					= 50;
+				EM2					= 100;
+				Bulltrend					= 1;
+				Beartrend					= 1;
+				Trail					= 1;
+				BEprice					= 1;
+				Tstop					= 1;
+			}
+			else if (State == State.Configure)
+			{
+			}
+			else if (State == State.DataLoaded)
+			{				
+				EMA1				= EMA(Close, Convert.ToInt32(EM1));
+				EMA2				= EMA(Close, Convert.ToInt32(EM2));
+				CandlestickPattern1				= CandlestickPattern(Close, ChartPattern.BullishEngulfing, Convert.ToInt32(Bulltrend));
+				RSI1				= RSI(Close, 14, 3);
+				ParabolicSAR1				= ParabolicSAR(Close, 0.02, 0.2, 0.02);
+				CandlestickPattern2				= CandlestickPattern(Close, ChartPattern.BearishEngulfing, Convert.ToInt32(Beartrend));
+				EMA1.Plots[0].Brush = Brushes.Goldenrod;
+				EMA2.Plots[0].Brush = Brushes.Goldenrod;
+				ParabolicSAR1.Plots[0].Brush = Brushes.Goldenrod;
+				RSI1.Plots[0].Brush = Brushes.DodgerBlue;
+				RSI1.Plots[1].Brush = Brushes.Goldenrod;
+				AddChartIndicator(EMA1);
+				AddChartIndicator(EMA2);
+				AddChartIndicator(ParabolicSAR1);
+				AddChartIndicator(RSI1);
+				SetProfitTarget("", CalculationMode.Ticks, 60);
+			}
+		}
+
+		protected override void OnBarUpdate()
+		{
+			if (BarsInProgress != 0) 
+				return;
+
+			if (CurrentBars[0] < 1)
+				return;
+
+			 // Set 1
+			if ((EMA1[0] > EMA2[0])
+				 && (CandlestickPattern1[0] == 1)
+				 && (Position.MarketPosition == MarketPosition.Flat))
+			{
+				EnterLong(1, "");
+				Print(@"Long position entered");
+			}
+			
+			 // Set 2
+			if ((Position.MarketPosition == MarketPosition.Long)
+				 && (BarsSinceEntryExecution(0, "", 0) > 10)
+				 && (Position.GetUnrealizedProfitLoss(PerformanceUnit.Ticks, Close[0]) > 0)
+				 && (CrossAbove(RSI1.Avg, 50, 1)))
+			{
+				EnterLong(1, "");
+				Print(@"Long position entered");
+			}
+			
+			 // Set 3
+			if ((Position.MarketPosition == MarketPosition.Long)
+				 && (ParabolicSAR1[0] <= Low[0])
+				 && (ParabolicSAR1[0] > Tstop))
+			{
+				ExitLongStopMarket(Convert.ToInt32(Position.Quantity), Tstop, "", "");
+				Print(@"Long position exited");
+			}
+			
+			 // Set 4
+			if ((EMA1[0] < EMA2[0])
+				 && (CandlestickPattern2[0] == 1)
+				 && (Position.MarketPosition == MarketPosition.Flat))
+			{
+				EnterShort(1, "");
+				Print(@"Short position entered");
+			}
+			
+			 // Set 5
+			if ((Position.MarketPosition == MarketPosition.Short)
+				 && (BarsSinceEntryExecution(0, "", 0) > 10)
+				 && (Position.GetUnrealizedProfitLoss(PerformanceUnit.Ticks, Close[0]) > 0)
+				 && (CrossBelow(RSI1.Avg, 40, 1)))
+			{
+				EnterShort(1, "");
+				Print(@"Short position entered");
+			}
+			
+			 // Set 6
+			if ((Position.MarketPosition == MarketPosition.Short)
+				 && (ParabolicSAR1[0] >= High[0])
+				 && (ParabolicSAR1[0] < Tstop))
+			{
+				ExitShortStopMarket(Convert.ToInt32(Position.Quantity), Tstop, "", "");
+				Print(@"short position exited");
+			}
+			
+			 // Set 7
+			if (MarketPosition.Long == MarketPosition.Long)
+			{
+				Tstop = (Position.AveragePrice + (Trail * TickSize)) ;
+			}
+			
+			 // Set 8
+			if (Position.MarketPosition == MarketPosition.Short)
+			{
+				Tstop = (Position.AveragePrice + (Trail * TickSize)) ;
+			}
+			
+		}
+
+		#region Properties
+		[NinjaScriptProperty]
+		[Range(1, int.MaxValue)]
+		[Display(Name="EM1", Order=1, GroupName="Parameters")]
+		public int EM1
+		{ get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, int.MaxValue)]
+		[Display(Name="EM2", Order=2, GroupName="Parameters")]
+		public int EM2
+		{ get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, int.MaxValue)]
+		[Display(Name="Bulltrend", Order=3, GroupName="Parameters")]
+		public int Bulltrend
+		{ get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, int.MaxValue)]
+		[Display(Name="Beartrend", Order=4, GroupName="Parameters")]
+		public int Beartrend
+		{ get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, double.MaxValue)]
+		[Display(Name="Trail", Order=5, GroupName="Parameters")]
+		public double Trail
+		{ get; set; }
+		#endregion
+
+	}
+}
